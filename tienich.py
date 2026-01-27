@@ -2,14 +2,14 @@ import pandas as pd
 import numpy as np
 
 def get_hanoi_data():
-    # Tọa độ 10 địa điểm tại Hà Nội
+    # Tọa độ 12 địa điểm tại Hà Nội
     data = {
         'name': ['Hoàn Kiếm', 'Ba Đình', 'Tây Hồ', 'Cầu Giấy', 'Đống Đa', 
-                 'Hai Bà Trưng', 'Hoàng Mai', 'Thanh Xuân', 'Long Biên', 'Nam Từ Liêm'],
+                 'Hai Bà Trưng', 'Hoàng Mai', 'Thanh Xuân', 'Long Biên', 'Nam Từ Liêm', 'Bắc Từ Liêm', 'Hà Đông'],
         'lat': [21.0285, 21.0368, 21.0700, 21.0333, 21.0117, 
-                21.0125, 20.9667, 20.9937, 21.0400, 21.0100],
+                21.0125, 20.9667, 20.9937, 21.0400, 21.0100, 21.0653, 20.9649],
         'lon': [105.8521, 105.8342, 105.8200, 105.7833, 105.8250, 
-                105.8500, 105.8500, 105.8119, 105.8900, 105.7700]
+                105.8500, 105.8500, 105.8119, 105.8900, 105.7700, 105.7466, 105.7707]
     }
     return pd.DataFrame(data)
 
