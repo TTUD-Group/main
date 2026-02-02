@@ -1,5 +1,6 @@
 import numpy as np
 import random
+from itertools import combinations
 
 # 1. Thuật toán Tham lam (Nearest Neighbor)
 def nearest_neighbor(matrix):
@@ -55,7 +56,48 @@ def simulated_annealing(matrix, steps=50000, temp=1000, cooling=0.995):
     return best_path, best_cost, history_paths
 
 # 3. Thuật toán Quy hoạch động (Held-Karp) - Tối ưu tuyệt đối
-def held_karp(matrix):
-    n = len(matrix)
-    path = [0, 1, 2, 3, 9, 10, 11, 7, 4, 5, 6, 8]
-    return path, 78.50
+def held_karp(dists):
+    n = len(dists)
+    C = {}
+    # Base cases: cost from 0 to each single node
+    for k in range(1, n):
+        C[(1 << k, k)] = (dists[0][k], 0)
+    # Build DP table
+    for subset_size in range(2, n):
+        for subset in combinations(range(1, n), subset_size):
+            bits = 0
+            for bit in subset:
+                bits |= 1 << bit
+            for k in subset:
+                prev = bits & ~(1 << k)
+                res = []
+                for m in subset:
+                    if m == k:
+                        continue
+                    if (prev, m) in C:
+                        res.append((C[(prev, m)][0] + dists[m][k], m))
+                if res:
+                    C[(bits, k)] = min(res)
+    # Find min cost for full set
+    bits = (2**n - 1) - 1  # all nodes except 0
+    res = []
+    for k in range(1, n):
+        if (bits, k) in C:
+            res.append((C[(bits, k)][0] + dists[k][0], k))
+    if not res:
+        raise ValueError("No path found")
+    opt, parent = min(res)
+    # Reconstruct path
+    path = []
+    current_bits = bits
+    for _ in range(n - 1):
+        path.append(parent)
+        if (current_bits, parent) in C:
+            _, next_parent = C[(current_bits, parent)]
+            current_bits &= ~(1 << parent)
+            parent = next_parent
+        else:
+            raise ValueError("Path reconstruction failed")
+    path.append(0)
+    path.reverse()
+    return path, opt

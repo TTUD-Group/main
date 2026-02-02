@@ -8,6 +8,7 @@ from streamlit_folium import folium_static
 import time
 from io import BytesIO
 from itertools import combinations
+import os
 
 
 # Copy hàm từ tienich.py
@@ -222,7 +223,7 @@ if st.sidebar.button("Chạy TSP"):
     axs[2].tick_params(axis='x', rotation=45)
     st.pyplot(fig)
 
-    # Animation Simulated Annealing (GIF)
+    # Animation Simulated Annealing (GIF) - lưu tạm ra file rồi đọc vào buffer
     if len(history_paths) > 1:
         fig_anim, ax = plt.subplots(figsize=(10, 7))
         ax.scatter(df.lon, df.lat, c='red', s=120, zorder=5, edgecolor='black')
@@ -253,11 +254,31 @@ if st.sidebar.button("Chạy TSP"):
 
         ani = FuncAnimation(fig_anim, update, frames=len(history_paths), interval=1500, blit=True, repeat=True)
 
-        buf = BytesIO()
-        ani.save(buf, format='gif', writer='pillow', fps=0.6, dpi=120)
-        buf.seek(0)
-        st.subheader("Animation Quá trình Simulated Annealing")
-        st.image(buf, use_column_width=True)
+        # Lưu tạm ra file GIF
+        temp_gif_path = "temp_sa_animation.gif"
+        try:
+            ani.save(temp_gif_path, writer='pillow', fps=0.6, dpi=120)
+
+            # Đọc file vào BytesIO để hiển thị trên Streamlit
+            with open(temp_gif_path, "rb") as f:
+                gif_data = f.read()
+            buf = BytesIO(gif_data)
+            buf.seek(0)
+
+            st.subheader("Animation Quá trình Simulated Annealing")
+            st.image(buf, use_column_width=True)
+
+        except Exception as e:
+            st.error(f"Lỗi khi tạo animation: {e}")
+        finally:
+            # Xóa file tạm (nếu tồn tại)
+            if os.path.exists(temp_gif_path):
+                try:
+                    os.remove(temp_gif_path)
+                except:
+                    pass  # bỏ qua nếu không xóa được
+
+        plt.close(fig_anim)  # Giải phóng figure
     else:
         st.info("Không đủ frame để tạo animation Simulated Annealing.")
 
