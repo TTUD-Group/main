@@ -1,17 +1,29 @@
 import pandas as pd
 import numpy as np
+import json
 
 def get_hanoi_data():
-    # Tọa độ 12 địa điểm tại Hà Nội
-    data = {
-        'name': ['Hoàn Kiếm', 'Ba Đình', 'Tây Hồ', 'Cầu Giấy', 'Đống Đa', 
-                 'Hai Bà Trưng', 'Hoàng Mai', 'Thanh Xuân', 'Long Biên', 'Nam Từ Liêm', 'Bắc Từ Liêm', 'Hà Đông'],
-        'lat': [21.0285, 21.0368, 21.0700, 21.0333, 21.0117, 
-                21.0125, 20.9667, 20.9937, 21.0400, 21.0100, 21.0653, 20.9649],
-        'lon': [105.8521, 105.8342, 105.8200, 105.7833, 105.8250, 
-                105.8500, 105.8500, 105.8119, 105.8900, 105.7700, 105.7466, 105.7707]
-    }
-    return pd.DataFrame(data)
+    geojson_file = 'hotosm_vnm_points_of_interest_points_geojson.geojson'  # Tên file unzip
+    with open(geojson_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    # Extract name, lat, lon
+    points = []
+    for feature in data['features']:
+        if 'properties' in feature and 'geometry' in feature and feature['geometry']['type'] == 'Point':
+            props = feature['properties'] or {}  # tránh None
+            name = props.get('name')
+            if name is None or not isinstance(name, str) or name.strip() == "":
+                name = f"POI {len(points) + 1}"
+            lon, lat = feature['geometry']['coordinates']
+            points.append({'name': name, 'lat': lat, 'lon': lon})
+
+    df = pd.DataFrame(points)
+    df = df.head(300)
+
+    df['name'] = df['name'].fillna("Unknown").astype(str)
+
+    return df
 
 def create_dist_matrix(df, rain=False, peak_hour=False):
     num_points = len(df)

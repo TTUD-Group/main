@@ -18,15 +18,17 @@ def nearest_neighbor(matrix):
     total_cost += matrix[path[-1]][path[0]]
     return path, total_cost
 
-# 2. Thuật toán Luyện kim (Simulated Annealing)
-def simulated_annealing(matrix, steps=50000, temp=1000, cooling=0.995):
+# 2. Thuật toán Luyện kim (Simulated Annealing) - Cập nhật để khác biệt hơn
+def simulated_annealing(matrix, steps=100000, temp=1000, cooling=0.999):  # Tăng steps, cooling chậm hơn
     def get_cost(p):
         return sum(matrix[p[i]][p[i+1]] for i in range(len(p)-1)) + matrix[p[-1]][p[0]]
     n = len(matrix)
 
-    nn_path, nn_cost = nearest_neighbor(matrix)
-    current_path = nn_path[:]
-    current_cost = nn_cost
+    # Bắt đầu từ random path thay vì NN để khác biệt lớn hơn
+    random_path = list(range(n))
+    random.shuffle(random_path)
+    current_path = random_path
+    current_cost = get_cost(current_path)
     best_path, best_cost = current_path[:], current_cost
 
     history_paths = []
@@ -47,7 +49,7 @@ def simulated_annealing(matrix, steps=50000, temp=1000, cooling=0.995):
             current_path, current_cost = new_path, new_cost
             if current_cost < best_cost:  # Track best global
                 best_path, best_cost = current_path[:], current_cost
-                if i % 500 == 0:
+                if i % 100 == 0:  # Track thường xuyên hơn để animation chi tiết
                     history_paths.append(best_path[:])
 
     if history_paths[-1] != best_path:

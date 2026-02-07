@@ -9,19 +9,31 @@ import time
 from io import BytesIO
 from itertools import combinations
 import os
+import json  # Thêm để đọc GeoJSON
 
 
-# Copy hàm từ tienich.py
+# Copy hàm từ tienich.py (updated với GeoJSON)
 def get_hanoi_data():
-    data = {
-        'name': ['Hoàn Kiếm', 'Ba Đình', 'Tây Hồ', 'Cầu Giấy', 'Đống Đa',
-                 'Hai Bà Trưng', 'Hoàng Mai', 'Thanh Xuân', 'Long Biên', 'Nam Từ Liêm', 'Bắc Từ Liêm', 'Hà Đông'],
-        'lat': [21.0285, 21.0368, 21.0700, 21.0333, 21.0117,
-                21.0125, 20.9667, 20.9937, 21.0400, 21.0100, 21.0653, 20.9649],
-        'lon': [105.8521, 105.8342, 105.8200, 105.7833, 105.8250,
-                105.8500, 105.8500, 105.8119, 105.8900, 105.7700, 105.7466, 105.7707]
-    }
-    return pd.DataFrame(data)
+    # Đọc GeoJSON từ file (toàn VN POI, không lọc Hà Nội)
+    geojson_file = 'hotosm_vnm_points_of_interest_points_geojson.geojson'  # Tên file unzip
+    with open(geojson_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    # Extract name, lat, lon
+    points = []
+    for feature in data['features']:
+        if 'properties' in feature and 'geometry' in feature and feature['geometry']['type'] == 'Point':
+            name = feature['properties'].get('name', f"POI {len(points) + 1}")  # Default nếu thiếu name
+            lon, lat = feature['geometry']['coordinates']  # GeoJSON là [lon, lat]
+            points.append({'name': name, 'lat': lat, 'lon': lon})
+
+    df = pd.DataFrame(points)
+
+    # Giới hạn 300 điểm để TSP khả thi (toàn dataset quá lớn)
+    num_points = 300
+    df = df.head(num_points)  # Chỉnh lên 200 nếu muốn, nhưng SA chậm hơn
+
+    return df
 
 
 def create_dist_matrix(df, rain=False, peak_hour=False):
@@ -38,7 +50,7 @@ def create_dist_matrix(df, rain=False, peak_hour=False):
     return matrix
 
 
-# Copy hàm từ thuattoan.py
+# Copy hàm từ thuattoan.py (đã cập nhật SA)
 def nearest_neighbor(matrix):
     n = len(matrix)
     visited = [False] * n
@@ -55,14 +67,16 @@ def nearest_neighbor(matrix):
     return path, total_cost
 
 
-def simulated_annealing(matrix, steps=50000, temp=1000, cooling=0.995):
+def simulated_annealing(matrix, steps=100000, temp=1000, cooling=0.999):
     def get_cost(p):
         return sum(matrix[p[i]][p[i + 1]] for i in range(len(p) - 1)) + matrix[p[-1]][p[0]]
 
     n = len(matrix)
-    nn_path, nn_cost = nearest_neighbor(matrix)
-    current_path = nn_path[:]
-    current_cost = nn_cost
+    # Bắt đầu từ random path để khác biệt lớn hơn
+    random_path = list(range(n))
+    np.random.shuffle(random_path)
+    current_path = random_path
+    current_cost = get_cost(current_path)
     best_path, best_cost = current_path[:], current_cost
     history_paths = []
     history_paths.append(best_path[:])
@@ -80,7 +94,7 @@ def simulated_annealing(matrix, steps=50000, temp=1000, cooling=0.995):
             current_path, current_cost = new_path, new_cost
             if current_cost < best_cost:
                 best_path, best_cost = current_path[:], current_cost
-                if i % 500 == 0:
+                if i % 100 == 0:  # Track thường xuyên hơn
                     history_paths.append(best_path[:])
     if history_paths[-1] != best_path:
         history_paths.append(best_path[:])
@@ -130,7 +144,7 @@ def held_karp(dists):
     return path, opt
 
 
-# Các hàm hỗ trợ từ main.py
+# Các hàm hỗ trợ
 SPEED_KMH = 50
 
 
@@ -158,12 +172,12 @@ def get_path_details(df, path, dist_matrix):
 
 
 # Giao diện Streamlit
-st.title("TSP Hà Nội - Tối ưu Lộ trình Giao hàng cho Cường")
+st.title("TSP Việt Nam POI - Tối ưu Lộ trình Giao hàng")
 
 st.sidebar.header("Tham số đầu vào")
 rain = st.sidebar.checkbox("Có mưa (tăng 20% khoảng cách)", value=True)
 peak_hour = st.sidebar.checkbox("Giờ cao điểm (tăng 50% khoảng cách)", value=True)
-steps = st.sidebar.slider("Số steps cho Simulated Annealing", min_value=1000, max_value=100000, value=50000, step=1000)
+steps = st.sidebar.slider("Số steps cho Simulated Annealing", min_value=1000, max_value=200000, value=100000, step=1000)  # Tăng default
 
 if st.sidebar.button("Chạy TSP"):
     with st.spinner("Đang tính toán... (có thể mất vài giây với SA)"):
@@ -186,12 +200,17 @@ if st.sidebar.button("Chạy TSP"):
         travel_time_sa = calculate_travel_time(cost_sa)
         results.append({'Algorithm': 'Simulated Annealing', 'Cost (km)': cost_sa, 'Runtime (s)': time_sa, 'Travel Time (hours)': travel_time_sa})
 
-        # Held-Karp
-        start_hk = time.time()
-        path_hk, cost_hk = held_karp(dist_matrix)
-        time_hk = time.time() - start_hk
-        travel_time_hk = calculate_travel_time(cost_hk)
-        results.append({'Algorithm': 'Held-Karp', 'Cost (km)': cost_hk, 'Runtime (s)': time_hk, 'Travel Time (hours)': travel_time_hk})
+        # Held-Karp (skip nếu n > 20)
+        if len(df) <= 20:
+            start_hk = time.time()
+            path_hk, cost_hk = held_karp(dist_matrix)
+            time_hk = time.time() - start_hk
+            travel_time_hk = calculate_travel_time(cost_hk)
+            results.append({'Algorithm': 'Held-Karp', 'Cost (km)': cost_hk, 'Runtime (s)': time_hk, 'Travel Time (hours)': travel_time_hk})
+        else:
+            st.warning("Bỏ qua Held-Karp vì số lượng điểm quá lớn (>20), thời gian tính toán tăng theo cấp số nhân.")
+            results.append({'Algorithm': 'Held-Karp (Skipped)', 'Cost (km)': 'N/A', 'Runtime (s)': 'N/A', 'Travel Time (hours)': 'N/A'})
+            path_hk, cost_hk = path_sa, cost_sa  # Placeholder cho vẽ
 
         results_df = pd.DataFrame(results)
 
@@ -204,26 +223,39 @@ if st.sidebar.button("Chạy TSP"):
     st.subheader("Chi tiết lộ trình Simulated Annealing")
     st.text(get_path_details(df, path_sa, dist_matrix))
 
-    st.subheader("Chi tiết lộ trình Held-Karp")
-    st.text(get_path_details(df, path_hk, dist_matrix))
+    if len(df) <= 20:
+        st.subheader("Chi tiết lộ trình Held-Karp")
+        st.text(get_path_details(df, path_hk, dist_matrix))
+    else:
+        st.subheader("Chi tiết lộ trình Held-Karp")
+        st.text("N/A - Skipped do n > 20")
 
     # Biểu đồ so sánh
-    fig, axs = plt.subplots(1, 3, figsize=(18, 6))
-    axs[0].bar(results_df['Algorithm'], results_df['Cost (km)'], color=['orange', 'blue', 'green'])
-    axs[0].set_title('So sánh Cost (km)')
-    axs[0].set_ylabel('Cost (km)')
-    axs[0].tick_params(axis='x', rotation=45)
-    axs[1].bar(results_df['Algorithm'], results_df['Runtime (s)'], color=['orange', 'blue', 'green'])
-    axs[1].set_title('So sánh Thời gian chạy (s)')
-    axs[1].set_ylabel('Runtime (s)')
-    axs[1].tick_params(axis='x', rotation=45)
-    axs[2].bar(results_df['Algorithm'], results_df['Travel Time (hours)'], color=['orange', 'blue', 'green'])
-    axs[2].set_title('So sánh Thời gian di chuyển (giờ)')
-    axs[2].set_ylabel('Travel Time (hours)')
-    axs[2].tick_params(axis='x', rotation=45)
-    st.pyplot(fig)
+    plot_df = results_df[results_df['Algorithm'] != 'Held-Karp (Skipped)'].copy()
 
-    # Animation Simulated Annealing (GIF) - lưu tạm ra file rồi đọc vào buffer
+    if not plot_df.empty:
+        fig, axs = plt.subplots(1, 3, figsize=(18, 6))
+
+        axs[0].bar(plot_df['Algorithm'], plot_df['Cost (km)'], color=['orange', 'blue'])
+        axs[0].set_title('So sánh Cost (km)')
+        axs[0].set_ylabel('Cost (km)')
+        axs[0].tick_params(axis='x', rotation=45)
+
+        axs[1].bar(plot_df['Algorithm'], plot_df['Runtime (s)'], color=['orange', 'blue'])
+        axs[1].set_title('So sánh Thời gian chạy (s)')
+        axs[1].set_ylabel('Runtime (s)')
+        axs[1].tick_params(axis='x', rotation=45)
+
+        axs[2].bar(plot_df['Algorithm'], plot_df['Travel Time (hours)'], color=['orange', 'blue'])
+        axs[2].set_title('So sánh Thời gian di chuyển (giờ)')
+        axs[2].set_ylabel('Travel Time (hours)')
+        axs[2].tick_params(axis='x', rotation=45)
+
+        st.pyplot(fig)
+    else:
+        st.info("Không có dữ liệu số để vẽ biểu đồ so sánh (Held-Karp bị skip).")
+
+    # Animation Simulated Annealing
     if len(history_paths) > 1:
         fig_anim, ax = plt.subplots(figsize=(10, 7))
         ax.scatter(df.lon, df.lat, c='red', s=120, zorder=5, edgecolor='black')
@@ -248,37 +280,27 @@ if st.sidebar.button("Chạy TSP"):
             lats = [df.iloc[k].lat for k in path] + [df.iloc[path[0]].lat]
             line.set_data(lons, lats)
             current_cost = calculate_cost(path)
-            ax.set_title(f"Simulated Annealing - Bước {frame * 500:,} | Cost: {current_cost:.2f} km", fontsize=14)
+            ax.set_title(f"Simulated Annealing - Bước {frame * 100:,} | Cost: {current_cost:.2f} km", fontsize=14)
             return line,
 
 
         ani = FuncAnimation(fig_anim, update, frames=len(history_paths), interval=1500, blit=True, repeat=True)
 
-        # Lưu tạm ra file GIF
         temp_gif_path = "temp_sa_animation.gif"
         try:
             ani.save(temp_gif_path, writer='pillow', fps=0.6, dpi=120)
-
-            # Đọc file vào BytesIO để hiển thị trên Streamlit
             with open(temp_gif_path, "rb") as f:
                 gif_data = f.read()
             buf = BytesIO(gif_data)
             buf.seek(0)
-
             st.subheader("Animation Quá trình Simulated Annealing")
             st.image(buf, use_column_width=True)
-
         except Exception as e:
             st.error(f"Lỗi khi tạo animation: {e}")
         finally:
-            # Xóa file tạm (nếu tồn tại)
             if os.path.exists(temp_gif_path):
-                try:
-                    os.remove(temp_gif_path)
-                except:
-                    pass  # bỏ qua nếu không xóa được
-
-        plt.close(fig_anim)  # Giải phóng figure
+                os.remove(temp_gif_path)
+        plt.close(fig_anim)
     else:
         st.info("Không đủ frame để tạo animation Simulated Annealing.")
 
@@ -291,12 +313,13 @@ if st.sidebar.button("Chạy TSP"):
     lons_nn = [df.iloc[i].lon for i in path_nn] + [df.iloc[path_nn[0]].lon]
     lats_nn = [df.iloc[i].lat for i in path_nn] + [df.iloc[path_nn[0]].lat]
     plt.plot(lons_nn, lats_nn, color='orange', linestyle='--', marker='o', linewidth=1.5, label=f'Lộ trình NN: {cost_nn:.2f}km')
-    lons_hk = [df.iloc[i].lon for i in path_hk] + [df.iloc[path_hk[0]].lon]
-    lats_hk = [df.iloc[i].lat for i in path_hk] + [df.iloc[path_hk[0]].lat]
-    plt.plot(lons_hk, lats_hk, color='green', linestyle='-.', marker='o', linewidth=2, label=f'Lộ trình Optimal: {cost_hk:.2f}km')
+    if len(df) <= 20:
+        lons_hk = [df.iloc[i].lon for i in path_hk] + [df.iloc[path_hk[0]].lon]
+        lats_hk = [df.iloc[i].lat for i in path_hk] + [df.iloc[path_hk[0]].lat]
+        plt.plot(lons_hk, lats_hk, color='green', linestyle='-.', marker='o', linewidth=2, label=f'Lộ trình Optimal: {cost_hk:.2f}km')
     for i, name in enumerate(df.name):
         plt.annotate(name, (df.iloc[i].lon + 0.001, df.iloc[i].lat + 0.001), fontsize=10, ha='left')
-    plt.title("So sánh Lộ trình TSP tại Hà Nội (NN, SA, Optimal)")
+    plt.title("So sánh Lộ trình TSP tại Việt Nam POI (NN, SA, Optimal)")
     plt.xlabel("Kinh độ (Longitude)")
     plt.ylabel("Vĩ độ (Latitude)")
     plt.legend(loc='upper left', fontsize=10)
@@ -305,8 +328,8 @@ if st.sidebar.button("Chạy TSP"):
     st.subheader("Biểu đồ So sánh Lộ trình")
     st.pyplot(fig_routes)
 
-    # Bản đồ Folium tương tác
-    m = folium.Map(location=[21.0285, 105.8521], zoom_start=11, tiles='CartoDB positron')
+    # Bản đồ Folium tương tác (center VN)
+    m = folium.Map(location=[16.0471, 108.2062], zoom_start=5, tiles='CartoDB positron')
     for idx, row in df.iterrows():
         folium.Marker(
             location=[row['lat'], row['lon']],
@@ -318,7 +341,8 @@ if st.sidebar.button("Chạy TSP"):
     folium.PolyLine(points_sa, color="blue", weight=5, opacity=0.9, tooltip=f"Lộ trình SA: {cost_sa:.2f} km", popup=f"Simulated Annealing - Cost: {cost_sa:.2f} km").add_to(m)
     points_nn = [[df.iloc[i]['lat'], df.iloc[i]['lon']] for i in path_nn] + [[df.iloc[path_nn[0]]['lat'], df.iloc[path_nn[0]]['lon']]]
     folium.PolyLine(points_nn, color="orange", weight=4, opacity=0.8, dash_array='10, 5', tooltip=f"Lộ trình NN: {cost_nn:.2f} km", popup=f"Nearest Neighbor - Cost: {cost_nn:.2f} km").add_to(m)
-    points_hk = [[df.iloc[i]['lat'], df.iloc[i]['lon']] for i in path_hk] + [[df.iloc[path_hk[0]]['lat'], df.iloc[path_hk[0]]['lon']]]
-    folium.PolyLine(points_hk, color="green", weight=4, opacity=0.85, dash_array='3, 6', tooltip=f"Lộ trình Optimal: {cost_hk:.2f} km", popup=f"Held-Karp Optimal - Cost: {cost_hk:.2f} km").add_to(m)
+    if len(df) <= 20:
+        points_hk = [[df.iloc[i]['lat'], df.iloc[i]['lon']] for i in path_hk] + [[df.iloc[path_hk[0]]['lat'], df.iloc[path_hk[0]]['lon']]]
+        folium.PolyLine(points_hk, color="green", weight=4, opacity=0.85, dash_array='3, 6', tooltip=f"Lộ trình Optimal: {cost_hk:.2f} km", popup=f"Held-Karp Optimal - Cost: {cost_hk:.2f} km").add_to(m)
     st.subheader("Bản đồ Tương tác (Zoom, Click để xem chi tiết)")
     folium_static(m)

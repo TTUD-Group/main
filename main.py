@@ -12,16 +12,16 @@ import os
 from datetime import datetime
 
 # Parser ở đầu
-parser = argparse.ArgumentParser(description="TSP Hà Nội với tùy chọn mưa/giờ cao điểm/steps SA")
+parser = argparse.ArgumentParser(description="TSP Việt Nam POI với tùy chọn mưa/giờ cao điểm/steps SA")
 parser.add_argument('--rain', action='store_true', default=True, help="Tăng khoảng cách 20% do mưa (default: True)")
 parser.add_argument('--no-rain', dest='rain', action='store_false', help="Tắt mưa")
 parser.add_argument('--peak', action='store_true', default=True, help="Tăng khoảng cách 50% giờ cao điểm (default: True)")
 parser.add_argument('--no-peak', dest='peak', action='store_false', help="Tắt giờ cao điểm")
-parser.add_argument('--steps', type=int, default=50000, help="Số steps cho SA (default: 50000)")
+parser.add_argument('--steps', type=int, default=100000, help="Số steps cho SA (default: 100000)")  # Tăng để SA tốt hơn
 args = parser.parse_args()
 
 # Giả sử tốc độ trung bình (km/h) để tính thời gian di chuyển. Có thể điều chỉnh
-SPEED_KMH = 50  # Tốc độ trung bình ở Hà Nội, xem xét giao thông
+SPEED_KMH = 50  # Tốc độ trung bình, xem xét giao thông
 
 def calculate_travel_time(distance_km):
     """Tính thời gian di chuyển (giờ) dựa trên khoảng cách và tốc độ."""
@@ -73,15 +73,20 @@ def main():
     print_path_details(df, path_sa, dist_matrix, "Simulated Annealing")
     results.append({'Algorithm': 'Simulated Annealing', 'Cost (km)': cost_sa, 'Runtime (s)': time_sa, 'Travel Time (hours)': travel_time_sa})
 
-    # 4. Chạy và đo thời gian Held-Karp
-    start_hk = time.time()
-    path_hk, cost_hk = held_karp(dist_matrix)
-    end_hk = time.time()
-    time_hk = end_hk - start_hk
-    travel_time_hk = calculate_travel_time(cost_hk)
-    print(f"Kết quả Held-Karp: {cost_hk:.2f} km, Thời gian chạy: {time_hk:.4f} giây")
-    print_path_details(df, path_hk, dist_matrix, "Held-Karp")
-    results.append({'Algorithm': 'Held-Karp', 'Cost (km)': cost_hk, 'Runtime (s)': time_hk, 'Travel Time (hours)': travel_time_hk})
+    # 4. Chạy và đo thời gian Held-Karp (skip nếu n > 20, hiển thị N/A)
+    if len(df) <= 20:
+        start_hk = time.time()
+        path_hk, cost_hk = held_karp(dist_matrix)
+        end_hk = time.time()
+        time_hk = end_hk - start_hk
+        travel_time_hk = calculate_travel_time(cost_hk)
+        print(f"Kết quả Held-Karp: {cost_hk:.2f} km, Thời gian chạy: {time_hk:.4f} giây")
+        print_path_details(df, path_hk, dist_matrix, "Held-Karp")
+        results.append({'Algorithm': 'Held-Karp', 'Cost (km)': cost_hk, 'Runtime (s)': time_hk, 'Travel Time (hours)': travel_time_hk})
+    else:
+        print("Bỏ qua Held-Karp vì số lượng điểm quá lớn (>20), thời gian tính toán tăng theo cấp số nhân.")
+        results.append({'Algorithm': 'Held-Karp (Skipped)', 'Cost (km)': 'N/A', 'Runtime (s)': 'N/A', 'Travel Time (hours)': 'N/A'})
+        path_hk, cost_hk = path_sa, cost_sa  # Để vẽ biểu đồ, dùng SA làm placeholder, nhưng results là N/A
 
     # 5. Hiển thị bảng so sánh (sử dụng pandas)
     results_df = pd.DataFrame(results)
@@ -89,7 +94,7 @@ def main():
     print(results_df.to_string(index=False))
 
     # Thêm các hàm lưu file mới
-    def save_comparison_to_csv(results, filename=r'D:\Downloads\ket_qua_tsp_hanoi.csv'):
+    def save_comparison_to_csv(results, filename=r'D:\Downloads\ket_qua_tsp_vn_poi.csv'):
         """Lưu bảng so sánh các thuật toán vào CSV"""
         df = pd.DataFrame(results)
         df.to_csv(filename, index=False, encoding='utf-8-sig')
@@ -99,7 +104,7 @@ def main():
         """Lưu chi tiết lộ trình đầy đủ của cả 3 thuật toán vào file TXT"""
         with open(filename, 'w', encoding='utf-8') as f:
             f.write("============================================================\n")
-            f.write("          CHI TIẾT LỘ TRÌNH TSP HÀ NỘI\n")
+            f.write("          CHI TIẾT LỘ TRÌNH TSP VIỆT NAM POI\n")
             f.write(f"Ngày chạy: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"Điều kiện: Mưa = {args.rain}, Giờ cao điểm = {args.peak}\n")
             f.write("============================================================\n\n")
@@ -121,38 +126,48 @@ def main():
 
             write_path_details(path_nn, cost_nn, "Nearest Neighbor")
             write_path_details(path_sa, cost_sa, "Simulated Annealing")
-            write_path_details(path_hk, cost_hk, "Held-Karp (Tối ưu)")
+            if len(df) <= 20:
+                write_path_details(path_hk, cost_hk, "Held-Karp (Tối ưu)")
+            else:
+                f.write("--- Held-Karp (Skipped) ---\nN/A do n > 20\n\n")
 
         print(f"Đã lưu chi tiết lộ trình đầy đủ vào: {filename}")
 
-    # 6. Vẽ biểu đồ so sánh (bar chart cho Cost, Runtime, Travel Time)
-    fig, axs = plt.subplots(1, 3, figsize=(18, 6))
-
-    # Biểu đồ Cost
-    axs[0].bar(results_df['Algorithm'], results_df['Cost (km)'], color=['orange', 'blue', 'green'])
-    axs[0].set_title('So sánh Cost (km)')
-    axs[0].set_ylabel('Cost (km)')
-    axs[0].tick_params(axis='x', rotation=45)
-
-    # Biểu đồ Runtime
-    axs[1].bar(results_df['Algorithm'], results_df['Runtime (s)'], color=['orange', 'blue', 'green'])
-    axs[1].set_title('So sánh Thời gian chạy (s)')
-    axs[1].set_ylabel('Runtime (s)')
-    axs[1].tick_params(axis='x', rotation=45)
-
-    # Biểu đồ Travel Time
-    axs[2].bar(results_df['Algorithm'], results_df['Travel Time (hours)'], color=['orange', 'blue', 'green'])
-    axs[2].set_title('So sánh Thời gian di chuyển (giờ)')
-    axs[2].set_ylabel('Travel Time (hours)')
-    axs[2].tick_params(axis='x', rotation=45)
-
-    plt.tight_layout()
-    plt.savefig(r'D:\Downloads\so_sanh_thuat_toan.png', dpi=300)
-    print("Đã lưu biểu đồ so sánh vào: D:\\Downloads\\so_sanh_thuat_toan.png")
     save_comparison_to_csv(results)
     save_route_details_to_txt(df, path_nn, cost_nn, path_sa, cost_sa, path_hk, cost_hk, dist_matrix)
 
-    if len(history_paths) > 1:  # Chỉ tạo animation nếu có ít nhất 2 frame
+    # 6. Vẽ biểu đồ so sánh (bar chart cho Cost, Runtime, Travel Time)
+    plot_df = results_df[results_df['Algorithm'] != 'Held-Karp (Skipped)'].copy()
+
+    if not plot_df.empty:
+        fig, axs = plt.subplots(1, 3, figsize=(18, 6))
+
+        # Biểu đồ Cost
+        axs[0].bar(plot_df['Algorithm'], plot_df['Cost (km)'], color=['orange', 'blue'])
+        axs[0].set_title('So sánh Cost (km)')
+        axs[0].set_ylabel('Cost (km)')
+        axs[0].tick_params(axis='x', rotation=45)
+
+        # Biểu đồ Runtime
+        axs[1].bar(plot_df['Algorithm'], plot_df['Runtime (s)'], color=['orange', 'blue'])
+        axs[1].set_title('So sánh Thời gian chạy (s)')
+        axs[1].set_ylabel('Runtime (s)')
+        axs[1].tick_params(axis='x', rotation=45)
+
+        # Biểu đồ Travel Time
+        axs[2].bar(plot_df['Algorithm'], plot_df['Travel Time (hours)'], color=['orange', 'blue'])
+        axs[2].set_title('So sánh Thời gian di chuyển (giờ)')
+        axs[2].set_ylabel('Travel Time (hours)')
+        axs[2].tick_params(axis='x', rotation=45)
+
+        plt.tight_layout()
+        plt.savefig(r'D:\Downloads\so_sanh_thuat_toan.png', dpi=300)
+        print("Đã lưu biểu đồ so sánh vào: D:\\Downloads\\so_sanh_thuat_toan.png")
+    else:
+        print("Không có dữ liệu số để vẽ biểu đồ so sánh (có thể do Held-Karp skipped và không có thuật toán khác).")
+
+    # Animation cho SA
+    if len(history_paths) > 1:  # Chỉ tạo nếu có ít nhất 2 frame
         fig, ax = plt.subplots(figsize=(10, 7))
         ax.scatter(df.lon, df.lat, c='red', s=120, zorder=5, edgecolor='black')
         line, = ax.plot([], [], 'b-o', linewidth=2.5, markersize=8)
@@ -174,7 +189,7 @@ def main():
             lats = [df.iloc[k].lat for k in path] + [df.iloc[path[0]].lat]
             line.set_data(lons, lats)
             current_cost = calculate_cost(path)
-            ax.set_title(f"Simulated Annealing - Bước {frame * 500:,} | Cost: {current_cost:.2f} km", fontsize=14)
+            ax.set_title(f"Simulated Annealing - Bước {frame * 100:,} | Cost: {current_cost:.2f} km", fontsize=14)  # Chỉnh 100 để animation chi tiết hơn
             return line,
 
         ani = FuncAnimation(
@@ -198,7 +213,10 @@ def main():
 
     print(f"Kết quả Nearest Neighbor: {cost_nn:.2f} km")
     print(f"Kết quả Simulated Annealing: {cost_sa:.2f} km")
-    print(f"Kết quả Tối ưu (Held-Karp): {cost_hk:.2f} km")
+    if len(df) <= 20:
+        print(f"Kết quả Tối ưu (Held-Karp): {cost_hk:.2f} km")
+    else:
+        print("Held-Karp: Skipped")
 
     # 7. Vẽ biểu đồ với tất cả 3 lộ trình
     plt.figure(figsize=(15, 10))
@@ -214,27 +232,28 @@ def main():
     lats_nn = [df.iloc[i].lat for i in path_nn] + [df.iloc[path_nn[0]].lat]
     plt.plot(lons_nn, lats_nn, color='orange', linestyle='--', marker='o', linewidth=1.5, label=f'Lộ trình NN: {cost_nn:.2f}km')
 
-    # Vẽ lộ trình Optimal (Màu xanh lá, dotted)
-    lons_opt = [df.iloc[i].lon for i in path_hk] + [df.iloc[path_hk[0]].lon]
-    lats_opt = [df.iloc[i].lat for i in path_hk] + [df.iloc[path_hk[0]].lat]
-    plt.plot(lons_opt, lats_opt, color='green', linestyle='-.', marker='o', linewidth=2, label=f'Lộ trình Optimal: {cost_hk:.2f}km')
+    # Vẽ lộ trình Optimal chỉ nếu không skip
+    if len(df) <= 20:
+        lons_opt = [df.iloc[i].lon for i in path_hk] + [df.iloc[path_hk[0]].lon]
+        lats_opt = [df.iloc[i].lat for i in path_hk] + [df.iloc[path_hk[0]].lat]
+        plt.plot(lons_opt, lats_opt, color='green', linestyle='-.', marker='o', linewidth=2, label=f'Lộ trình Optimal: {cost_hk:.2f}km')
 
     for i, name in enumerate(df.name):
         plt.annotate(name, (df.iloc[i].lon + 0.001, df.iloc[i].lat + 0.001), fontsize=10, ha='left')
 
-    plt.title("So sánh và Tối ưu lộ trình giao hàng (TSP) tại Hà Nội (NN, SA, Optimal)")
+    plt.title("So sánh và Tối ưu lộ trình giao hàng (TSP) tại Việt Nam POI (NN, SA, Optimal)")
     plt.xlabel("Kinh độ (Longitude)")
     plt.ylabel("Vĩ độ (Latitude)")
     plt.legend(loc='upper left', fontsize=10)
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(r'D:\Downloads\lo_trinh_hanoi_all.png', dpi=300, bbox_inches='tight')
-    print("Đã lưu biểu đồ vào file: lo_trinh_hanoi_all.png")
+    plt.savefig(r'D:\Downloads\lo_trinh_vn_poi_all.png', dpi=300, bbox_inches='tight')
+    print("Đã lưu biểu đồ vào file: lo_trinh_vn_poi_all.png")
 
-    # 8. Tạo bản đồ interactive với Folium (thay thế Matplotlib scatter)
-    m = folium.Map(location=[21.0285, 105.8521], zoom_start=11, tiles='CartoDB positron')
+    # 8. Tạo bản đồ interactive với Folium
+    m = folium.Map(location=[16.0471, 108.2062], zoom_start=5, tiles='CartoDB positron')  # Center VN
 
-    # Đánh dấu 10 điểm với popup chi tiết
+    # Đánh dấu điểm với popup
     for idx, row in df.iterrows():
         folium.Marker(
             location=[row['lat'], row['lon']],
@@ -243,7 +262,7 @@ def main():
             icon=folium.Icon(color='red', icon='info-sign', prefix='fa')
         ).add_to(m)
 
-    # Vẽ lộ trình SA (xanh dương, dày, solid)
+    # Vẽ lộ trình SA
     points_sa = [[df.iloc[i]['lat'], df.iloc[i]['lon']] for i in path_sa] + [[df.iloc[path_sa[0]]['lat'], df.iloc[path_sa[0]]['lon']]]
     folium.PolyLine(
         points_sa,
@@ -254,7 +273,7 @@ def main():
         popup=f"Simulated Annealing - Cost: {cost_sa:.2f} km"
     ).add_to(m)
 
-    # Vẽ lộ trình NN (cam, dashed)
+    # Vẽ lộ trình NN
     points_nn = [[df.iloc[i]['lat'], df.iloc[i]['lon']] for i in path_nn] + [[df.iloc[path_nn[0]]['lat'], df.iloc[path_nn[0]]['lon']]]
     folium.PolyLine(
         points_nn,
@@ -266,22 +285,23 @@ def main():
         popup=f"Nearest Neighbor - Cost: {cost_nn:.2f} km"
     ).add_to(m)
 
-    # Vẽ lộ trình Optimal (xanh lá, dotted)
-    points_opt = [[df.iloc[i]['lat'], df.iloc[i]['lon']] for i in path_hk] + [[df.iloc[path_hk[0]]['lat'], df.iloc[path_hk[0]]['lon']]]
-    folium.PolyLine(
-        points_opt,
-        color="green",
-        weight=4,
-        opacity=0.85,
-        dash_array='3, 6',
-        tooltip=f"Lộ trình Optimal: {cost_hk:.2f} km",
-        popup=f"Held-Karp Optimal - Cost: {cost_hk:.2f} km"
-    ).add_to(m)
+    # Vẽ lộ trình Optimal chỉ nếu không skip
+    if len(df) <= 20:
+        points_opt = [[df.iloc[i]['lat'], df.iloc[i]['lon']] for i in path_hk] + [[df.iloc[path_hk[0]]['lat'], df.iloc[path_hk[0]]['lon']]]
+        folium.PolyLine(
+            points_opt,
+            color="green",
+            weight=4,
+            opacity=0.85,
+            dash_array='3, 6',
+            tooltip=f"Lộ trình Optimal: {cost_hk:.2f} km",
+            popup=f"Held-Karp Optimal - Cost: {cost_hk:.2f} km"
+        ).add_to(m)
 
     # Lưu bản đồ
-    m.save(r'D:\Downloads\lo_trinh_hanoi_interactive.html')
-    print("Đã lưu bản đồ tương tác (zoom, click, popup) vào: D:\\Downloads\\lo_trinh_hanoi_interactive.html")
-    print("Mở file HTML bằng trình duyệt (Chrome/Firefox) để xem bản đồ Hà Nội thực tế.")
+    m.save(r'D:\Downloads\lo_trinh_vn_poi_interactive.html')
+    print("Đã lưu bản đồ tương tác (zoom, click, popup) vào: D:\\Downloads\\lo_trinh_vn_poi_interactive.html")
+    print("Mở file HTML bằng trình duyệt để xem bản đồ Việt Nam thực tế.")
 
 if __name__ == "__main__":
     main()
